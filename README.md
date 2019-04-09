@@ -2,7 +2,7 @@
 a simple dictionary class imp, it can auto expand and shrink, a fast and light container
 
 # usage
-```
+```c++
 NetCore::dictionary<NetCore::CStr, NetCore::CStr> dict;
 dict["hello"] = "world";
 dict.erase("hello");
