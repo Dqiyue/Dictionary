@@ -66,7 +66,7 @@ public:
         return gethash(str.str());
     }
 
-    static inline unsigned int gethash(CStr& str) {
+    static inline unsigned int gethash(const CStr& str) {
         return gethash(str.str());
     }
 };

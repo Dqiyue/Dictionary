@@ -13,7 +13,8 @@
 
 #include <string.h>
 #include <stdlib.h>
-
+#include <utility>
+#include <stdio.h>
 #include "base.h"
 
 namespace NetCore {
@@ -52,7 +53,7 @@ public:
     
 
     CStr(CStr&& other) {
-        rob(other);
+        swap(other);
     }
 
     CStr(const CStr&& other) {
@@ -68,6 +69,7 @@ public:
     }
 
     CStr(char*& s) {
+        printf("CStr(char*& s)\n");
         if (s) {
             _size = strlen(s);
             _capaciity = _size + 1;
@@ -80,6 +82,7 @@ public:
     }
 
     CStr(const char*& s) {
+        printf("CStr(const char*& s)\n");
         if (s) {
             _size = strlen(s);
             _capaciity = _size + 1;
@@ -92,18 +95,52 @@ public:
     }
 
     CStr(char*&& s) {
+        printf("CStr(char*&& s)\n");
         if (s) {
+            // _size = strlen(s);
+            // _capaciity = _size + 1;
+            // _str = (char*)nc_malloc(_capaciity);
+            // memcpy(_str, s, _size);
+            // _str[_size] = 0;
+            _str = s;
             _size = strlen(s);
+            _capaciity = _size + 1;
+        } else {
+           init();
+        }
+    }
+
+    CStr(const unsigned char*& s) {
+        printf("CStr(const unsigned char*& s)\n");
+        if (s) {
+            _size = strlen((char*)s);
             _capaciity = _size + 1;
             _str = (char*)nc_malloc(_capaciity);
             memcpy(_str, s, _size);
             _str[_size] = 0;
+        } else {
+            init();
+        }
+    }
+
+    CStr(unsigned char*&& s) {
+        printf("CStr(unsigned char*&& s)\n");
+        if (s) {
+            // _size = strlen(s);
+            // _capaciity = _size + 1;
+            // _str = (char*)nc_malloc(_capaciity);
+            // memcpy(_str, s, _size);
+            // _str[_size] = 0;
+            _str = (char*)s;
+            _size = strlen((char*)s);
+            _capaciity = _size + 1;
         } else {
            init();
         }
     }
 
     CStr(const char*&& s) {
+        printf("CStr(const char*&& s)\n");
         if (s) {
             _size = strlen(s);
             _capaciity = _size + 1;
@@ -119,6 +156,12 @@ public:
         SAFE_FREE(_str);
     }
 public:
+
+    inline  CStr& swap(CStr& other) {
+        std::swap(_str, other._str);
+        std::swap(_size, other._size);
+        std::swap(_capaciity, other._capaciity);
+    }
     //CStr& operator=(const CStr& other);
     inline CStr& operator=(const char*& s) {
 
@@ -171,16 +214,18 @@ public:
 
     inline CStr& operator=(char*&& s) {
         unsigned int size_ = strlen(s);
-        
-        if (_capaciity < size_ + 1) {
-            SAFE_FREE(_str);
-            _capaciity = size_ + 1;
-            _str = (char*)nc_malloc(_capaciity);
-            
-        }
-        memcpy(_str, s, size_);
+        _str = s;
         _size = size_;
-        _str[_size] = 0;
+        _capaciity = _size + 1;
+        
+        // if (_capaciity < size_ + 1) {
+        //     SAFE_FREE(_str);
+        //     _capaciity = size_ + 1;
+        //     _str = (char*)nc_malloc(_capaciity); 
+        // }
+        // memcpy(_str, s, size_);
+        // _size = size_;
+        // _str[_size] = 0;
 
         return *this;
     }
@@ -237,7 +282,7 @@ public:
 
     inline CStr& operator=(CStr&& other) {
         if (LIKELY(this != &other)) {
-            return rob(other);
+            return swap(other);
         }
 
         return *this;
@@ -256,6 +301,17 @@ public:
             _str[_size] = 0;
         }
 
+        return *this;
+    }
+
+    inline CStr& operator+=(char ch) {
+        if (_capaciity <= _size + 1) {
+            _capaciity += 16;
+            _str = (char*)nc_realloc(_str, _capaciity);
+        }
+
+        _str[_size] = ch;
+        _str[++_size] = 0;
         return *this;
     }
 
@@ -279,7 +335,7 @@ public:
     //CStr& operator+=(const CStr& other);
     //bool parse_net_str(const uint8_t* data, uint32_t len);
 public:
-    inline const char* str() {return _str;}
+    inline const char* str() const {return _str;}
     inline unsigned int size() {return _size;}
     inline unsigned int capaciity() {return _capaciity;}
     inline bool empty() {return (_size == 0);}

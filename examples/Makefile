@@ -8,4 +8,4 @@ test: test.o
 	$(CXX) $^ $(LDFLAGS) -o $@
 
 clean:
-	rm -f *.o
+	rm -f *.o test

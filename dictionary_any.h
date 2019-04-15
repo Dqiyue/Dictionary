@@ -8,41 +8,55 @@
  * 
  */
 
-#ifndef _DICTIONARY_H_
-#define _DICTIONARY_H_
+#ifndef _DICTIONARY_ANY_H_
+#define _DICTIONARY_ANY_H_
 
 
 #include "hash.h"
+#include "any.h"
+#include "str.h"
 #include <assert.h>
-#include <utility>
 
 namespace NetCore {
 
-inline unsigned int roundup_pow_of_two(unsigned int size) {
-	if (size == 0) {
-		return 0;
-	}
-	if (size >= 0x80000000) {
-		return 0x80000000;
-	}
+// inline unsigned int roundup_pow_of_two(unsigned int size) {
+// 	if (size == 0) {
+// 		return 0;
+// 	}
+// 	if (size >= 0x80000000) {
+// 		return 0x80000000;
+// 	}
 
-	unsigned int i = 0;
-	--size;
-	while ((size >> (++i)) != 0);
-	return (((unsigned int)1) << i);
-}
+// 	unsigned int i = 0;
+// 	--size;
+// 	while ((size >> (++i)) != 0);
+// 	return (((unsigned int)1) << i);
+// }
 
-template <typename t1, typename t2>
-class dictionary {
+class dictionary_any {
 public:
     enum {DEFAULT_BUCKETS_NUM = 8, MIN_BUCKETS = 2, BASE_ELEM_NUM = 4};
+    inline static unsigned int roundup_pow_of_two(unsigned int size) {
+        if (size == 0) {
+            return 0;
+        }
+        if (size >= 0x80000000) {
+            return 0x80000000;
+        }
+
+        unsigned int i = 0;
+        --size;
+        while ((size >> (++i)) != 0);
+        return (((unsigned int)1) << i);
+    }
     typedef struct  elem{
         elem() {next = 0;}
         ~elem() = default;
-        elem& operator=(elem& e) {
+        elem& operator=(const elem& e) {
             key = e.key;
             val = e.val;
             next = e.next;
+            hash = e.hash;
             return *this;
         }
 
@@ -50,18 +64,22 @@ public:
             key = std::move(e.key);
             val = std::move(e.val);
             next = e.next;
+            hash = e.hash;
             return *this;
         }
-        const typename std::remove_cv<t1>::type& getkey() const {return key;}
 
-        friend class dictionary;
-        t2 val;
+        friend class dictionary_any;
+        unsigned int hash;
+        any val;
+        any key;
+        //template <typename T>
+        //const typename std::remove_cv<T>::type& getkey() const {return *(key.get<T>());}
     private:
-        t1 key;
+        //any key;
         unsigned int next; //the key to next elem
     }* iterator;
 public:
-    dictionary(unsigned int buckets_num = DEFAULT_BUCKETS_NUM) {
+    dictionary_any(unsigned int buckets_num = DEFAULT_BUCKETS_NUM) {
         _bucket_num = (buckets_num <= MIN_BUCKETS ? MIN_BUCKETS : roundup_pow_of_two(buckets_num));
         _buckets = (unsigned int*)nc_malloc(sizeof(unsigned int) * _bucket_num);
         memset(_buckets, 0, sizeof(unsigned int) * _bucket_num);
@@ -77,7 +95,7 @@ public:
         //_dentry = _entry;
     }
 
-    dictionary(const dictionary& dict) {
+    dictionary_any(const dictionary_any& dict) {
         _bucket_num = dict._bucket_num;
         _buckets = (unsigned int*)nc_malloc(sizeof(unsigned int) * _bucket_num);
         memcpy((char*)_buckets, (char*)dict._buckets, sizeof(unsigned int) * _bucket_num);
@@ -90,12 +108,12 @@ public:
     }
 
 
-    dictionary(dictionary&& dict) {
+    dictionary_any(dictionary_any&& dict) {
         //release();
         this->swap(dict);
     }
 
-    virtual ~dictionary() {
+    virtual ~dictionary_any() {
         SAFE_FREE(_buckets);
         if (_entry) {
             delete[] _entry;
@@ -107,21 +125,21 @@ public:
         _size = 0;
     }
 
-    void swap(dictionary& dict) {
+    void swap(dictionary_any& dict) {
         std::swap(_bucket_num, dict._bucket_num);
         std::swap(_buckets, dict._buckets);
         std::swap(_entry, dict._entry);
         std::swap(_size, dict._size);
         std::swap(_esize, dict._esize);
     }
-    dictionary& operator=(const dictionary& dict) {
+    dictionary_any& operator=(const dictionary_any& dict) {
         SAFE_FREE(_buckets);
         if (_entry) {
             delete[] _entry;
         }
         _bucket_num = dict._bucket_num;
         _buckets = (unsigned int*)nc_malloc(sizeof(unsigned int) * _bucket_num);
-        memset(_buckets, dict._buckets, sizeof(unsigned int) * _bucket_num);
+        memcpy((char*)_buckets, (char*)dict._buckets, sizeof(unsigned int) * _bucket_num);
         _size = dict._size;
         _esize = dict._esize;
         _entry = new elem[_esize + 1];
@@ -130,7 +148,7 @@ public:
         }
     }
 
-    dictionary& operator=(dictionary&& dict) {
+    dictionary_any& operator=(dictionary_any&& dict) {
         //this->release();
         this->swap(dict);
     }
@@ -199,7 +217,7 @@ private:
 
     //make sure the _dsize is 0
     inline bool buckets_negotiation(unsigned int nb) {
-        unsigned int n = MAX(nb, MIN_BUCKETS);
+        unsigned int n = MAX(nb, MIN_BUCKETS);    
         unsigned int* temp = (unsigned int*)nc_malloc(sizeof(unsigned int) * n);
         if (!temp) {
             return false;
@@ -207,13 +225,15 @@ private:
         memset(temp, 0, sizeof(unsigned int) * n);
         unsigned int index = 0;
         for (iterator it = begin(); it != end(); ++it) {
-            index = indexof(CHash::gethash(it->key));
+            //index = indexof(CHash::gethash(it->key));
+            index = indexof(it->hash);
             it->next = temp[index];
             temp[index] = it - _entry;
         }
         delete[] _buckets;
         _buckets = temp;
         _bucket_num = n;
+        printf("-----------buckets_negotiation : new buckets num is %u\n",n);
         return true;
     }
 
@@ -222,8 +242,10 @@ private:
             return true;
         }
 
-        if (_size > _bucket_num << 1) {
+        printf("_size is %u,_bucket_num is %u\n", _size, _bucket_num);
+        if (_size > (_bucket_num << 1)) {
             //expand bucket
+            printf("-----------start  buckets_negotiation\n");
             (void)buckets_negotiation(_bucket_num << 1);
         }
 
@@ -242,11 +264,26 @@ private:
         _entry = ne;
         //_dentry = _entry;
         delete[] temp;
+        printf("auto_negotiation : new size is %u\n",_esize);
         //printf("end expand, now addr is 0x%08x\n", (unsigned int)_entry);
         return true;
     }
 
-    inline iterator find_with_index(t1&& key, unsigned int index) {
+    template <typename T>
+    inline iterator find_with_index(T&& key, unsigned int index) {
+        unsigned int pos = _buckets[index];
+        iterator it = &(_entry[pos]);
+        while(it != noval()) {
+            if (it->key == std::move(key)) {
+                return it;
+            }
+            it = &(_entry[it->next]);
+        }
+        return end();
+    }
+
+    template <typename T>
+    inline iterator find_with_index(const T& key, unsigned int index) {
         unsigned int pos = _buckets[index];
         iterator it = &(_entry[pos]);
         while(it != noval()) {
@@ -258,7 +295,10 @@ private:
         return end();
     }
 
-    inline iterator real_insert(t1&& key, t2&& val, unsigned int index) {
+
+    template <typename t1, typename t2>
+    inline iterator real_insert(t1&& key, t2&& val, unsigned int index, unsigned int hash) {
+        //expand
         // use deleted elem from dentry
         // iterator it = pop_dentry();
         // if (0 != it) {
@@ -268,9 +308,6 @@ private:
         //     _buckets[index] = it - _entry;
         //     return it;
         // } 
-
-
-        //expand
         if (auto_negotiation() == false && full()) {
             return end();
         }
@@ -278,6 +315,7 @@ private:
         iterator it = end();
         it->key = std::forward<t1>(key);
         it->val = std::forward<t2>(val);
+        it->hash = hash;
         it->next = _buckets[index];
         _buckets[index] = ++_size;
         return it;
@@ -286,65 +324,37 @@ private:
 public: //ops
 
 // find impl
-    inline iterator find(t1&& key) {
-        return find_with_index(std::move(key), indexof(CHash::gethash(key)));
+    template <typename T>
+    inline iterator find(T&& key) {
+        return find_with_index(std::forward<T>(key), indexof(CHash::gethash(key)));
     }
 
-    inline iterator find(const t1& key) {
+    template <typename T>
+    inline iterator find(const T& key) {
         return find_with_index(key, indexof(CHash::gethash(key)));
     }
 
 
+
+
 //insert impl
-
-    inline iterator insert(const t1& key, const t2& val) {
-        unsigned int index = indexof(CHash::gethash(key));
-        iterator it = find_with_index(key, index);
-        if (it != end()) {
-            it->val = val;
-            return it;
-        }
-
-        return real_insert(key, std::forward<t2>(val), index);
-    }
-
-    inline iterator insert(const t1& key, t2&& val) {
-        unsigned int index = indexof(CHash::gethash(key));
-        iterator it = find_with_index(key, index);
-        if (it != end()) {
-            it->val = val;
-            return it;
-        }
-
-        return real_insert(key, std::move(val), index);
-    }
-
-    inline iterator insert(t1&& key, const t2& val) {
-        unsigned int index = indexof(CHash::gethash(key));
-        iterator it = find_with_index(std::forward<t1>(key), index);
-        if (it != end()) {
-            it->val = val;
-            return it;
-        }
-
-        return real_insert(std::move(key), val, index);
-    }
-
+    template <typename t1, typename t2>
     inline iterator insert(t1&& key, t2&& val) {
-        unsigned int index = indexof(CHash::gethash(key));
-        iterator it = find_with_index(std::forward<t1>(key), index);
+        unsigned int hash = CHash::gethash(key);
+        unsigned int index = indexof(hash);
+        iterator it = find_with_index(key, index);
         if (it != end()) {
             it->val = val;
             return it;
         }
 
-        return real_insert(std::move(key), std::move(val), index);
+        return real_insert(std::forward<t1>(key), std::forward<t2>(val), index, hash);
     }
 
-
-    inline iterator erase_pre_imp(t1&& key, unsigned int index) {
+    template<typename T>
+    inline iterator erase_pre_imp(const T& key, unsigned int index) {
         iterator p = &(_entry[(_buckets[index])]);
-        if (key == p->key) {
+        if (p->key == key) {
             _buckets[index] = p->next;
             return p;
         }
@@ -362,30 +372,41 @@ public: //ops
 
 
 // erase imp
-    inline void erase(t1&& key) {
-        unsigned int index = indexof(CHash::gethash(key));
-        iterator it = erase_pre_imp(std::forward<t1>(key), index);
-        if (it == end()) {
-            return;
-        }
+    // for str
+    // inline void erase(CStr&& key) {
+    //     unsigned int index = indexof(CHash::gethash(key));
+    //     iterator it = erase_pre_imp(key, index);
+    //     if (it == end()) {
+    //         return;
+    //     }
 
-        //iterator last = &_entry[_size];
-        if (it == &_entry[_size]) {
-            --_size;
-            return;
-        }
+    //     //iterator last = &_entry[_size];
+    //     if (it == &_entry[_size]) {
+    //         --_size;
+    //         return;
+    //     }
 
-        *it = std::move(_entry[_size]);
+    //     *it = std::move(_entry[_size]);
+    //     index = indexof(CHash::gethash(*(it->key.get<T>())));
+    //     assert(_buckets[index] == _size);
+    //      _buckets[index] = it - _entry;
+    //     --_size;
+    //     return;
+    // }
 
-        index = indexof(CHash::gethash(it->key));
-        assert(_buckets[index] == _size);
-         _buckets[index] = it - _entry;
-        --_size;
-        (void)shrink();
-        return;
-    }
+    // inline any& operator[](CStr&& key) {
+    //     unsigned int hash = CHash::gethash(key);
+    //     unsigned int index = indexof(hash);
+    //     iterator it = find_with_index(key, index);
+    //     if (it == end()) {
+    //         it = real_insert(std::forward(key), any(), index, hash);
+    //     }
+    //     return it->val;
+    // }
+    //
 
-    inline void erase(const t1& key) {
+    template<typename T>
+    inline void erase(T&& key) {
         unsigned int index = indexof(CHash::gethash(key));
         iterator it = erase_pre_imp(key, index);
         if (it == end()) {
@@ -399,33 +420,34 @@ public: //ops
         }
 
         *it = std::move(_entry[_size]);
-
-        index = indexof(CHash::gethash(it->key));
+        index = indexof(it->hash);
         assert(_buckets[index] == _size);
          _buckets[index] = it - _entry;
         --_size;
-        (void)shrink();
         return;
     }
 
-
-    inline t2& operator[](t1&& key) {
-        unsigned int index = indexof(CHash::gethash(key));
-        iterator it = find_with_index(std::move(key), index);
+    template<typename T>
+    inline any& operator[](T&& key) {
+        unsigned int hash = CHash::gethash(key);
+        unsigned int index = indexof(hash);
+        iterator it = find_with_index(std::forward<T>(key), index);
         if (it == end()) {
-            it = real_insert(std::move(key), t2(), index);
+            it = real_insert(std::forward<T>(key), any(), index, hash);
         }
         return it->val;
     }
 
-    inline t2& operator[](t1& key) {
-        unsigned int index = indexof(CHash::gethash(key));
-        iterator it = find_with_index(std::forward<t1>(key), index);
-        if (it == end()) {
-            it = real_insert(key, t2(), index);
-        }
-        return it->val;
-    }
+    // template<typename T>
+    // inline any& operator[](const T& key) {
+    //     unsigned int hash = CHash::gethash(key);
+    //     unsigned int index = indexof(hash);
+    //     iterator it = find_with_index(key, index);
+    //     if (it == end()) {
+    //         it = real_insert(key, any(), index, hash);
+    //     }
+    //     return it->val;
+    // }
 
 
 
@@ -441,4 +463,4 @@ public:
 
 };
 
-#endif //_DICTIONARY_H_
+#endif //_DICTIONARY_ANY_H_
